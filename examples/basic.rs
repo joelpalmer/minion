@@ -1,37 +1,30 @@
+extern crate minion;
+use minion::Cancellable;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Handle;
-use std::{net, thread};
+use std::{
+    io::{self, prelude::*},
+    net, thread,
+};
 
-trait Cancellable {
-    type Error;
-    fn run(keep_running: &AtomicBool) -> Self::Error;
+struct Service(net::TcpListener);
 
-    /// the `!` means that this will `never` return unless there is an error
-    fn run_here() -> Result<!, Self::Error> {}
-
-    fn run_in_bg() -> Handle {}
+impl minion::Cancellable for Service {
+    type Error = io::Error;
+    fn for_each(&mut self) -> Result<minion::LoopState, Self::Error> {
+        let mut stream = self.0.accept()?.0;
+        write!(stream, "hello!")?;
+        Ok(minion::LoopState::Continue)
+    }
 }
 
-//Foo::new() {
-//    let listener = net::TcpListener::bind();
-//}
-
-impl Cancellable for Foo {
-    fn for_each(keep_running: &AtomicBool) {
-        let stream = listener.accept()?;
-
-        thread::spawn(move || {
-            do_work(stream);
-        });
+impl Service {
+    fn new() -> Self {
+        let listener = net::TcpListener::bind("127.0.0.1:6556").unwrap();
+        Service(listener)
     }
 }
 
 fn main() {
-    let foo: Foo;
-    //foo.run_here();
-    let h = foo.run_in_bg(); // h: Clone
-    thread::spawn(|| {
-        h.end(); // set keep_running = false
-    });
-    h.wait(); // return Result<(), Self::Error>
+    let mut s = Service::new();
+    s.run().unwrap();
 }

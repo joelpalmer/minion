@@ -5,31 +5,30 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-pub enum LoopResult<E> {
+pub enum LoopState {
     Continue,
     Break,
-    Error(E),
 }
 
 pub trait Cancellable {
     type Error;
-    fn for_each(&mut self) -> LoopResult<Self::Error>;
+    fn for_each(&mut self) -> Result<LoopState, Self::Error>;
 
     fn run(&mut self) -> Result<(), Self::Error> {
         loop {
             match self.for_each() {
-                LoopResult::Continue => {}
-                LoopResult::Break => break,
-                LoopResult::Error(e) => return Err(e),
+                Ok(LoopState::Continue) => {}
+                Ok(LoopState::Break) => break,
+                Err(e) => return Err(e),
             }
         }
         Ok(())
     }
 
-    fn spawn(self) -> Handle<Self::Error>
+    fn spawn(mut self) -> Handle<Self::Error>
     where
-        Self: Send,
-        Self::Error: Send,
+        Self: Sized + Send + 'static,
+        Self::Error: Send + 'static,
     {
         let keep_running = Arc::new(AtomicBool::new(true));
         let jh = {
@@ -37,28 +36,55 @@ pub trait Cancellable {
             thread::spawn(move || {
                 while keep_running.load(Ordering::SeqCst) {
                     match self.for_each() {
-                        LoopResult::Continue => {}
-                        LoopResult::Break => break,
-                        LoopResult::Error(e) => return Err(e),
+                        Ok(LoopState::Continue) => {}
+                        Ok(LoopState::Break) => break,
+                        Err(e) => return Err(e),
                     }
                 }
                 Ok(())
             })
         };
-        let h = Handle::new();
-        unimplemented!();
+        Handle {
+            keep_running,
+            executor: jh,
+        }
     }
 }
 
+pub struct Handle<E> {
+    keep_running: Arc<AtomicBool>,
+    executor: thread::JoinHandle<Result<(), E>>,
+}
+
 #[derive(Clone)]
-pub struct Handle<E> {}
+pub struct Canceller {
+    keep_running: Arc<AtomicBool>,
+}
 
 impl<E> Handle<E> {
-    pub fn wait(self) -> Result<(), E> {
-        unimplemented!()
+    pub fn canceller(&self) -> Canceller {
+        Canceller {
+            keep_running: self.keep_running.clone(),
+        }
     }
 
-    pub fn terminate(&self) {
-        unimplemented!()
+    pub fn cancel(&self) {
+        self.keep_running.store(false, Ordering::SeqCst);
+    }
+
+    pub fn wait(self) -> Result<(), E> {
+        match self.executor.join() {
+            Ok(r) => r,
+            Err(e) => {
+                // propagate the panic
+                panic!(e)
+            }
+        }
+    }
+}
+
+impl Canceller {
+    pub fn cancel(&self) {
+        self.keep_running.store(false, Ordering::SeqCst);
     }
 }
