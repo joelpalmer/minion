@@ -1,4 +1,4 @@
-//#![deny(missing_doc)]
+//#![deny(missing_docs)]
 
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicBool, Ordering};
