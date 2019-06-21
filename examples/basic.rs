@@ -12,16 +12,17 @@ trait Cancellable {
     fn run_in_bg() -> Handle {}
 }
 
-impl Cancellable for Foo {
-    fn run(keep_running: &AtomicBool) {
-        let listener = net::TcpListener::bind();
-        while keep_running.load(Ordering::SeqCst) {
-            let stream = listener.accept()?;
+//Foo::new() {
+//    let listener = net::TcpListener::bind();
+//}
 
-            thread::spawn(move || {
-                do_work(stream);
-            });
-        }
+impl Cancellable for Foo {
+    fn for_each(keep_running: &AtomicBool) {
+        let stream = listener.accept()?;
+
+        thread::spawn(move || {
+            do_work(stream);
+        });
     }
 }
 
