@@ -3,7 +3,7 @@ use minion::Cancellable;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     io::{self, prelude::*},
-    net, thread,
+    net, thread, time,
 };
 
 struct Service(net::TcpListener);
@@ -13,6 +13,7 @@ impl minion::Cancellable for Service {
     fn for_each(&mut self) -> Result<minion::LoopState, Self::Error> {
         let mut stream = self.0.accept()?.0;
         write!(stream, "hello!")?;
+        stream.shutdown(net::Shutdown::Both)?;
         Ok(minion::LoopState::Continue)
     }
 }
@@ -25,6 +26,15 @@ impl Service {
 }
 
 fn main() {
-    let mut s = Service::new();
-    s.run().unwrap();
+    let s = Service::new();
+    eprintln!("Server running");
+    let h = s.spawn();
+    let exit = h.canceller();
+    thread::spawn(move || {
+        thread::sleep(time::Duration::from_secs(10));
+        eprintln!("server terminating");
+        exit.cancel();
+    });
+    h.wait().unwrap();
+    eprintln!("server terminated");
 }
